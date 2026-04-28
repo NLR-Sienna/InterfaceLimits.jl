@@ -426,14 +426,16 @@ function add_constraints!(
                     intersect(security.contingency_branches, in_branches),
                     get_components(HVDC_TYPES, sys),
                 )
+                br_arc = (get_number(get_from(get_arc(br))), get_number(get_to(get_arc(br))))
                 for cbr in c_branches
                     cname = get_name(cbr)
+                    cbr_arc = (get_number(get_from(get_arc(cbr))), get_number(get_to(get_arc(cbr))))
                     @constraint(m, CF[iname, name, cname] >= flow_lims.reverse)
                     @constraint(m, CF[iname, name, cname] <= flow_lims.forward)
                     @constraint(
                         m,
                         CF[iname, name, cname] ==
-                        F[iname, name] + security.lodf[name, cname] * F[iname, cname]
+                        F[iname, name] + security.lodf[br_arc, cbr_arc] * F[iname, cname]
                     )
                 end
             end
@@ -529,7 +531,7 @@ function get_peak_load(load::ElectricLoad)
     return max(0.0, get_max_active_power(load))
 end
 
-function get_peak_load(load::FixedAdmittance)
+function get_peak_load(load::Union{FixedAdmittance, SwitchedAdmittance})
     return max(0.0, real(get_base_voltage(get_bus(load))^2 * get_Y(load)))
 end
 
