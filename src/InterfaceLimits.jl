@@ -629,6 +629,12 @@ function find_interface_limits(
     return df
 end
 
+# Debug functions
+_get_flow_limit_forward(comp::ACBranch) = get_rating(comp)
+_get_flow_limit_forward(comp::TwoTerminalHVDC) = get_active_power_limits_to(comp).max
+_get_flow_limit_reverse(comp::ACBranch) = get_rating(comp)
+_get_flow_limit_reverse(comp::TwoTerminalHVDC) = get_active_power_limits_from(comp).max
+
 function find_interface_limits(
     sys::System,
     solver::JuMP.MOI.OptimizerWithAttributes,
@@ -794,6 +800,8 @@ function find_interface_limits(
         transform!(flow_df, :branch =>ByRow(br->get_name(get_area(get_from(get_arc(get_component(ACBranch, sys, br))))))=> :from_area)
         transform!(flow_df, :branch =>ByRow(br->get_name(get_area(get_to(get_arc(get_component(ACBranch, sys, br))))))=> :to_area)
         transform!(flow_df, :branch =>ByRow(br->get_rating(get_component(ACBranch, sys, br)))=> :flow_limit)
+        transform!(flow_df, :branch => ByRow(_get_flow_limit_forward) => :flow_limit_forward)
+        transform!(flow_df, :branch => ByRow(_get_flow_limit_reverse) => :flow_limit_reverse)
 
         ### END OF DEBUGGING CODE ###
         return df, loads, gens, genloads, load_summary, flow_df 
