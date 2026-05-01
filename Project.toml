@@ -1,7 +1,7 @@
 name = "InterfaceLimits"
 uuid = "e431586a-0d4c-4f33-917e-c5f3a3b2c228"
-version = "0.1.1"
 authors = ["cbarrows <clayton.barrows@nrel.gov>"]
+version = "0.1.1"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -12,6 +12,6 @@ PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 [compat]
 DataFrames = "1"
 JuMP = "1"
-PowerNetworkMatrices = ">=0.14, <0.21"
+PowerNetworkMatrices = "0.14 - 0.20"
 PowerSystems = "^5"
 julia = "^1.10"

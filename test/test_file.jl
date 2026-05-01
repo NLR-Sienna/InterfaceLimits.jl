@@ -16,11 +16,25 @@ using HiGHS
     )
     set_units_base_system!(sys, "natural_units")
 
-    df = find_interface_limits(sys, solver)
 
-    @test df isa DataFrame
-    @test names(df) == ["interface", "transfer_limit", "sum_capacity"]
-    @test nrow(df) > 0
-    @test all(df.transfer_limit .>= 0)
-    @test all(df.transfer_limit .<= df.sum_capacity .+ 1e-6)
+    @testset "Basic interface test" begin
+        df = find_interface_limits(sys, solver)
+
+        @test df isa DataFrame
+        @test names(df) == ["interface", "transfer_limit", "sum_capacity"]
+        @test nrow(df) > 0
+        @test all(df.transfer_limit .>= 0)
+        @test all(df.transfer_limit .<= df.sum_capacity .+ 1e-6)
+    end
+
+    @testset "n-1 interface limits (security=true)" begin
+        @info "calculating n-1 interface limits"
+        df = find_interface_limits(sys, solver, security=true)
+
+        @test df isa DataFrame
+        @test names(df) == ["interface", "transfer_limit", "sum_capacity"]
+        @test nrow(df) > 0
+        @test all(df.transfer_limit .>= 0)
+        @test all(df.transfer_limit .<= df.sum_capacity .+ 1e-6)
+    end
 end
