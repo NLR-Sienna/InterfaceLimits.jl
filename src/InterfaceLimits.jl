@@ -12,7 +12,7 @@ export InjectionLimits
 
 const PSY = PowerSystems
 const LOAD_TYPES = ElectricLoad #for NAERM analysis
-const HVDC_TYPES = Union{TwoTerminalHVDCLine,TwoTerminalVSCDCLine}
+const HVDC_TYPES = TwoTerminalHVDC
 # const LOAD_TYPES = Union{InterruptiblePowerLoad,StaticLoad}
 
 """
@@ -273,7 +273,7 @@ function add_injector_constraint!( # for buses that have generators only
     @constraint(m, p_var - hvdc_inj <= max_gen)
 end
 
-function add_injector_constraint!( # for TwoTerminalHVDCLine buses with no gens or loads
+function add_injector_constraint!( # for TwoTerminalHVDC buses with no gens or loads
     m::Model,
     injector_type::Type{InterconnectingConverter},
     p_var, #injection variable,
@@ -327,14 +327,14 @@ function get_flow_lims(br::ACBranch)
     return (forward = get_rating(br), reverse = -1 * get_rating(br))
 end
 
-function get_flow_lims(br::TwoTerminalHVDCLine)
+function get_flow_lims(br::TwoTerminalHVDC)
     return (
         forward = get_active_power_limits_to(br).max,
         reverse = -1 * get_active_power_limits_from(br).max,
     )
 end
 
-function get_flow_lims(br::Union{Branch,TwoTerminalVSCDCLine})
+function get_flow_lims(br::Branch)
     @warn "$(typeof(br)) not considered in interface limit calculations"
     return (forward = Inf, reverse = -Inf)
 end
@@ -347,7 +347,7 @@ function get_directional_flow_lim(br::ACBranch, ikey::Pair{String,String})
 end
 
 function find_hvdc_buses(sys::System, bus_neighbors)
-    dc_br = get_available_components(TwoTerminalHVDCLine, sys)
+    dc_br = get_available_components(TwoTerminalHVDC, sys)
     from_b = get_from.(get_arc.(dc_br))
     to_b = get_to.(get_arc.(dc_br))
     return Set{ACBus}(intersect(union(from_b, to_b),bus_neighbors))
@@ -355,16 +355,16 @@ end
 
 function get_hvdc_inj(b, iname, F, sys)
     in_branches = F.axes[2]
-    dc_brs_from = get_components( 
+    dc_brs_from = get_components(
         x -> (
             get_from(get_arc(x)) == b
         ) && (get_name(x) in in_branches),
-        TwoTerminalHVDCLine, sys)
-    dc_brs_to = get_components( 
+        TwoTerminalHVDC, sys)
+    dc_brs_to = get_components(
         x -> (
             get_to(get_arc(x)) == b
         ) && (get_name(x) in in_branches),
-        TwoTerminalHVDCLine, sys)    
+        TwoTerminalHVDC, sys)
     hvdc_inj = 0.0
     length(dc_brs_from) > 0 && (hvdc_inj -= sum(F[iname,get_name.(dc_brs_from)]))
     length(dc_brs_to) > 0 && (hvdc_inj += sum(F[iname,get_name.(dc_brs_to)]))
@@ -412,7 +412,7 @@ function add_constraints!(
             @constraint(m, F[iname, name] >= flow_lims.reverse)
             @constraint(m, F[iname, name] <= flow_lims.forward)
 
-            br isa TwoTerminalHVDCLine && continue
+            br isa TwoTerminalHVDC && continue
 
             ptdf_expr = [
                 ptdf[name, get_number(b)] * P[iname, get_name(b)] for
@@ -426,14 +426,16 @@ function add_constraints!(
                     intersect(security.contingency_branches, in_branches),
                     get_components(HVDC_TYPES, sys),
                 )
+                br_arc = (get_number(get_from(get_arc(br))), get_number(get_to(get_arc(br))))
                 for cbr in c_branches
                     cname = get_name(cbr)
+                    cbr_arc = (get_number(get_from(get_arc(cbr))), get_number(get_to(get_arc(cbr))))
                     @constraint(m, CF[iname, name, cname] >= flow_lims.reverse)
                     @constraint(m, CF[iname, name, cname] <= flow_lims.forward)
                     @constraint(
                         m,
                         CF[iname, name, cname] ==
-                        F[iname, name] + security.lodf[name, cname] * F[iname, cname]
+                        F[iname, name] + security.lodf[br_arc, cbr_arc] * F[iname, cname]
                     )
                 end
             end
@@ -529,7 +531,7 @@ function get_peak_load(load::ElectricLoad)
     return max(0.0, get_max_active_power(load))
 end
 
-function get_peak_load(load::FixedAdmittance)
+function get_peak_load(load::Union{FixedAdmittance, SwitchedAdmittance})
     return max(0.0, real(get_base_voltage(get_bus(load))^2 * get_Y(load)))
 end
 
@@ -626,6 +628,12 @@ function find_interface_limits(
     @info "Interface limits calculated" df
     return df
 end
+
+# Debug functions
+_get_flow_limit_forward(comp::ACBranch) = get_rating(comp)
+_get_flow_limit_forward(comp::TwoTerminalHVDC) = get_active_power_limits_to(comp).max
+_get_flow_limit_reverse(comp::ACBranch) = get_rating(comp)
+_get_flow_limit_reverse(comp::TwoTerminalHVDC) = get_active_power_limits_from(comp).max
 
 function find_interface_limits(
     sys::System,
@@ -792,6 +800,8 @@ function find_interface_limits(
         transform!(flow_df, :branch =>ByRow(br->get_name(get_area(get_from(get_arc(get_component(ACBranch, sys, br))))))=> :from_area)
         transform!(flow_df, :branch =>ByRow(br->get_name(get_area(get_to(get_arc(get_component(ACBranch, sys, br))))))=> :to_area)
         transform!(flow_df, :branch =>ByRow(br->get_rating(get_component(ACBranch, sys, br)))=> :flow_limit)
+        transform!(flow_df, :branch => ByRow(_get_flow_limit_forward) => :flow_limit_forward)
+        transform!(flow_df, :branch => ByRow(_get_flow_limit_reverse) => :flow_limit_reverse)
 
         ### END OF DEBUGGING CODE ###
         return df, loads, gens, genloads, load_summary, flow_df 
